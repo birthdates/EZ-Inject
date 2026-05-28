@@ -17,8 +17,8 @@ use windows::{
     core::{s, PCWSTR, PWSTR},
     Win32::{
         Foundation::{
-            CloseHandle, BOOL, FILETIME, HANDLE, HMODULE, HWND, LPARAM, WAIT_FAILED, WAIT_OBJECT_0,
-            WAIT_TIMEOUT,
+            CloseHandle, GetLastError, BOOL, ERROR_ALREADY_EXISTS, FILETIME, HANDLE, HMODULE, HWND,
+            LPARAM, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT,
         },
         Graphics::Gdi::{
             CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, SelectObject, BITMAPINFO,
@@ -36,8 +36,9 @@ use windows::{
             },
             RemoteDesktop::ProcessIdToSessionId,
             Threading::{
-                CreateRemoteThread, GetCurrentProcessId, GetExitCodeThread, GetProcessTimes,
-                OpenProcess, WaitForSingleObject, LPTHREAD_START_ROUTINE, PROCESS_CREATE_THREAD,
+                AttachThreadInput, CreateMutexW, CreateRemoteThread, GetCurrentProcessId,
+                GetCurrentThreadId, GetExitCodeThread, GetProcessTimes, OpenProcess,
+                WaitForSingleObject, LPTHREAD_START_ROUTINE, PROCESS_CREATE_THREAD,
                 PROCESS_NAME_WIN32, PROCESS_QUERY_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
                 PROCESS_VM_OPERATION, PROCESS_VM_READ, PROCESS_VM_WRITE,
             },
@@ -45,8 +46,9 @@ use windows::{
         UI::{
             Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_SMALLICON},
             WindowsAndMessaging::{
-                DestroyIcon, DrawIconEx, EnumWindows, GetWindowThreadProcessId, IsWindowVisible,
-                DI_NORMAL,
+                BringWindowToTop, DestroyIcon, DrawIconEx, EnumWindows, FindWindowW,
+                GetForegroundWindow, GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible,
+                SetForegroundWindow, ShowWindow, DI_NORMAL, SW_RESTORE,
             },
         },
     },
@@ -110,9 +112,11 @@ struct AppSettings {
     success_popup_duration_ms: u64,
     confetti_enabled: bool,
     shake_enabled: bool,
-    dont_show_success_again: bool,
+    focus_on_inject: bool,
     active_profile_id: String,
     profiles: Vec<Profile>,
+    #[serde(skip_serializing)]
+    dont_show_success_again: bool,
     #[serde(skip_serializing)]
     selected_target: Option<SelectedTarget>,
     #[serde(skip_serializing)]
@@ -129,9 +133,10 @@ impl Default for AppSettings {
             success_popup_duration_ms: 5_000,
             confetti_enabled: true,
             shake_enabled: true,
-            dont_show_success_again: false,
+            focus_on_inject: false,
             active_profile_id: "main".to_string(),
             profiles: vec![Profile::default()],
+            dont_show_success_again: false,
             selected_target: None,
             dlls: Vec::new(),
         }
@@ -192,9 +197,15 @@ fn save_settings(app: AppHandle, mut settings: AppSettings) -> Result<(), String
 fn inject_dlls(
     target: SelectedTarget,
     dlls: Vec<DllEntry>,
+    focus_on_inject: bool,
 ) -> Result<Vec<InjectionResult>, String> {
     let processes = enumerate_processes()?;
     let pid = resolve_target_pid(&target, &processes)?;
+    let focus_hwnd = if focus_on_inject {
+        find_visible_window_for_pid(pid)
+    } else {
+        None
+    };
 
     let mut results = Vec::new();
     for dll in dlls.into_iter().filter(|dll| dll.enabled) {
@@ -229,6 +240,12 @@ fn inject_dlls(
                 success: false,
                 message: error,
             }),
+        }
+    }
+
+    if let Some(hwnd) = focus_hwnd {
+        if results.iter().any(|result| result.success) {
+            let _ = focus_window(hwnd);
         }
     }
 
@@ -272,6 +289,10 @@ fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
 fn normalize_settings(settings: &mut AppSettings) {
     settings.refresh_interval_ms = settings.refresh_interval_ms.clamp(1_000, 15_000);
     settings.success_popup_duration_ms = settings.success_popup_duration_ms.clamp(1_500, 10_000);
+    if settings.dont_show_success_again {
+        settings.success_popup_enabled = false;
+        settings.dont_show_success_again = false;
+    }
     if settings.process_sort != "created" && settings.process_sort != "az" {
         settings.process_sort = "created".to_string();
     }
@@ -621,6 +642,73 @@ fn visible_window_pids() -> HashSet<u32> {
     pids
 }
 
+fn focus_window(hwnd: HWND) -> Result<(), String> {
+    unsafe {
+        if !IsWindow(hwnd).as_bool() {
+            return Err("Captured target window is no longer valid.".to_string());
+        }
+        if IsIconic(hwnd).as_bool() {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+        }
+
+        let foreground = GetForegroundWindow();
+        let current_thread_id = GetCurrentThreadId();
+        let target_thread_id = GetWindowThreadProcessId(hwnd, None);
+        let foreground_thread_id = if !foreground.0.is_null() {
+            GetWindowThreadProcessId(foreground, None)
+        } else {
+            0
+        };
+
+        let attached_target = target_thread_id != 0
+            && AttachThreadInput(current_thread_id, target_thread_id, true).as_bool();
+        let attached_foreground = foreground_thread_id != 0
+            && foreground_thread_id != target_thread_id
+            && AttachThreadInput(current_thread_id, foreground_thread_id, true).as_bool();
+
+        let bring_result = BringWindowToTop(hwnd);
+        let foreground_result = SetForegroundWindow(hwnd).ok();
+
+        if attached_foreground {
+            let _ = AttachThreadInput(current_thread_id, foreground_thread_id, false);
+        }
+        if attached_target {
+            let _ = AttachThreadInput(current_thread_id, target_thread_id, false);
+        }
+
+        bring_result
+            .and(foreground_result)
+            .map_err(|error| format!("Could not focus captured target window: {error}"))
+    }
+}
+
+fn find_visible_window_for_pid(pid: u32) -> Option<HWND> {
+    struct SearchState {
+        pid: u32,
+        hwnd: Option<HWND>,
+    }
+
+    unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let state = &mut *(lparam.0 as *mut SearchState);
+        let mut window_pid = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut window_pid));
+
+        if window_pid == state.pid && IsWindowVisible(hwnd).as_bool() {
+            state.hwnd = Some(hwnd);
+            return BOOL(0);
+        }
+
+        BOOL(1)
+    }
+
+    let mut state = SearchState { pid, hwnd: None };
+    unsafe {
+        let _ = EnumWindows(Some(enum_proc), LPARAM(&mut state as *mut _ as isize));
+    }
+
+    state.hwnd
+}
+
 fn extract_icon_data_url(path: &str) -> Option<String> {
     let wide_path = to_wide_null(path);
     let mut info = SHFILEINFOW::default();
@@ -740,7 +828,45 @@ fn to_wide_null(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(Some(0)).collect()
 }
 
+fn acquire_single_instance_mutex() -> Result<Option<HANDLE>, String> {
+    let mutex = unsafe {
+        CreateMutexW(
+            None,
+            false,
+            windows::core::w!("Local\\EZInject.SingleInstance"),
+        )
+    }
+    .map_err(|error| format!("CreateMutexW failed: {error}"))?;
+
+    if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+        unsafe {
+            let _ = CloseHandle(mutex);
+        }
+        return Ok(None);
+    }
+
+    Ok(Some(mutex))
+}
+
+fn focus_existing_app_window() {
+    if let Ok(hwnd) = unsafe { FindWindowW(PCWSTR::null(), windows::core::w!("EZInject")) } {
+        let _ = focus_window(hwnd);
+    }
+}
+
 fn main() {
+    let _single_instance_mutex = match acquire_single_instance_mutex() {
+        Ok(Some(mutex)) => mutex,
+        Ok(None) => {
+            focus_existing_app_window();
+            return;
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            return;
+        }
+    };
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             list_processes,

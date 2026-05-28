@@ -66,7 +66,7 @@ type AppSettings = {
   successPopupDurationMs: number;
   confettiEnabled: boolean;
   shakeEnabled: boolean;
-  dontShowSuccessAgain: boolean;
+  focusOnInject: boolean;
   activeProfileId: string;
   profiles: Profile[];
   selectedTarget?: SelectedTarget | null;
@@ -100,7 +100,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   successPopupDurationMs: 5000,
   confettiEnabled: true,
   shakeEnabled: true,
-  dontShowSuccessAgain: false,
+  focusOnInject: false,
   activeProfileId: "main",
   profiles: [
     {
@@ -639,7 +639,8 @@ export default function App() {
     try {
       const results = await invoke<InjectionResult[]>("inject_dlls", {
         target,
-        dlls: enabledDlls
+        dlls: enabledDlls,
+        focusOnInject: settings.focusOnInject
       });
       window.clearInterval(progressTimer);
       setProgress(100);
@@ -670,7 +671,7 @@ export default function App() {
             colors: ["#725AC1", "#8D86C9", "#F7ECE1", "#3f335f"]
           });
         }
-        if (settings.successPopupEnabled && !settings.dontShowSuccessAgain) {
+        if (settings.successPopupEnabled) {
           setModal("success");
         }
       }
@@ -697,7 +698,6 @@ export default function App() {
 
   function dontShowSuccessAgain() {
     updateSettings({
-      dontShowSuccessAgain: true,
       successPopupEnabled: false
     });
     setModal(null);
@@ -952,20 +952,22 @@ export default function App() {
                 <strong>{settings.shakeEnabled ? "On" : "Off"}</strong>
               </button>
               <button
-                className={`state-toggle ${
-                  settings.successPopupEnabled && !settings.dontShowSuccessAgain ? "on" : "off"
-                }`}
+                className={`state-toggle ${settings.focusOnInject ? "on" : "off"}`}
+                onClick={() => updateSettings({ focusOnInject: !settings.focusOnInject })}
+              >
+                <span>Focus on inject</span>
+                <strong>{settings.focusOnInject ? "On" : "Off"}</strong>
+              </button>
+              <button
+                className={`state-toggle ${settings.successPopupEnabled ? "on" : "off"}`}
                 onClick={() =>
                   updateSettings({
-                    successPopupEnabled: !(settings.successPopupEnabled && !settings.dontShowSuccessAgain),
-                    dontShowSuccessAgain: false
+                    successPopupEnabled: !settings.successPopupEnabled
                   })
                 }
               >
                 <span>Success popup</span>
-                <strong>
-                  {settings.successPopupEnabled && !settings.dontShowSuccessAgain ? "On" : "Off"}
-                </strong>
+                <strong>{settings.successPopupEnabled ? "On" : "Off"}</strong>
               </button>
               <div className="setting-row">
                 <label>Success popup close</label>
