@@ -23,9 +23,15 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
 
       - name: Install dependencies
         run: npm ci
@@ -41,15 +47,28 @@ jobs:
           New-Item -ItemType Directory -Force -Path release-assets | Out-Null
 
           $rawExe = "src-tauri\target\release\ezinject.exe"
-          $setupExe = Get-ChildItem -Path "src-tauri\target\release\bundle\nsis" -Filter "*.exe" | Select-Object -First 1
-          $msi = Get-ChildItem -Path "src-tauri\target\release\bundle\msi" -Filter "*.msi" | Select-Object -First 1
+          $nsisDir = "src-tauri\target\release\bundle\nsis"
+          $msiDir = "src-tauri\target\release\bundle\msi"
 
           if (!(Test-Path -LiteralPath $rawExe)) {
             throw "Raw executable was not found at $rawExe"
           }
+
+          if (!(Test-Path -LiteralPath $nsisDir)) {
+            throw "NSIS bundle directory was not found at $nsisDir"
+          }
+
+          if (!(Test-Path -LiteralPath $msiDir)) {
+            throw "MSI bundle directory was not found at $msiDir"
+          }
+
+          $setupExe = Get-ChildItem -Path $nsisDir -Filter "*.exe" | Select-Object -First 1
+          $msi = Get-ChildItem -Path $msiDir -Filter "*.msi" | Select-Object -First 1
+
           if ($null -eq $setupExe) {
             throw "NSIS setup executable was not found."
           }
+
           if ($null -eq $msi) {
             throw "MSI installer was not found."
           }
@@ -77,6 +96,7 @@ jobs:
           $notes = "Automated Windows build for commit $env:GITHUB_SHA on master."
 
           gh release view $tag *> $null
+
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag release-assets/* --clobber
           } else {
