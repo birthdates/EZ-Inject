@@ -34,6 +34,7 @@ use windows::{
             Memory::{
                 VirtualAllocEx, VirtualFreeEx, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_READWRITE,
             },
+            ProcessStatus::{EnumProcessModules, GetModuleFileNameExW},
             RemoteDesktop::ProcessIdToSessionId,
             Threading::{
                 AttachThreadInput, CreateMutexW, CreateRemoteThread, GetCurrentProcessId,
@@ -148,7 +149,13 @@ impl Default for AppSettings {
 struct InjectionResult {
     dll_path: String,
     success: bool,
+    already_loaded: bool,
     message: String,
+}
+
+enum InjectOutcome {
+    AlreadyLoaded,
+    Injected,
 }
 
 const LOAD_LIBRARY_WAIT_TIMEOUT_MS: u32 = 15_000;
@@ -198,6 +205,7 @@ fn inject_dlls(
     target: SelectedTarget,
     dlls: Vec<DllEntry>,
     focus_on_inject: bool,
+    override_already_loaded: bool,
 ) -> Result<Vec<InjectionResult>, String> {
     let processes = enumerate_processes()?;
     let pid = resolve_target_pid(&target, &processes)?;
@@ -207,12 +215,14 @@ fn inject_dlls(
         None
     };
 
+    let mut should_focus_window = true;
     let mut results = Vec::new();
     for dll in dlls.into_iter().filter(|dll| dll.enabled) {
         if !dll.path.to_ascii_lowercase().ends_with(".dll") {
             results.push(InjectionResult {
                 dll_path: dll.path,
                 success: false,
+                already_loaded: false,
                 message: "Skipped because the file is not a DLL path.".to_string(),
             });
             continue;
@@ -223,28 +233,41 @@ fn inject_dlls(
             results.push(InjectionResult {
                 dll_path: dll.path,
                 success: false,
+                already_loaded: false,
                 message: "DLL path does not exist.".to_string(),
             });
             continue;
         }
 
         let dll_path = dll.path.clone();
-        match inject_one(pid, &dll_path) {
-            Ok(()) => results.push(InjectionResult {
+        match inject_one(pid, &dll_path, override_already_loaded) {
+            Ok(InjectOutcome::AlreadyLoaded) => {
+                results.push(InjectionResult {
+                    dll_path,
+                    success: true,
+                    already_loaded: true,
+                    message: "DLL is already loaded in the target process.".to_string(),
+                });
+
+                should_focus_window = false;
+            },
+            Ok(InjectOutcome::Injected) => results.push(InjectionResult {
                 dll_path,
                 success: true,
+                already_loaded: false,
                 message: "Loaded with LoadLibraryW.".to_string(),
             }),
             Err(error) => results.push(InjectionResult {
                 dll_path,
                 success: false,
+                already_loaded: false,
                 message: error,
             }),
         }
     }
 
     if let Some(hwnd) = focus_hwnd {
-        if results.iter().any(|result| result.success) {
+        if should_focus_window && results.iter().any(|result| result.success) {
             let _ = focus_window(hwnd);
         }
     }
@@ -441,7 +464,143 @@ fn resolve_target_pid(target: &SelectedTarget, processes: &[ProcessEntry]) -> Re
     })
 }
 
-fn inject_one(pid: u32, dll_path: &str) -> Result<(), String> {
+fn find_module_handle(process: HANDLE, dll_path: &str) -> Result<Option<HMODULE>, String> {
+    let target_lower = dll_path.to_ascii_lowercase();
+    let mut needed = 0u32;
+
+    let first_enum = unsafe { EnumProcessModules(process, null_mut(), 0, &mut needed) };
+    if first_enum.is_err() {
+        return Ok(None);
+    }
+
+    let module_count = (needed as usize) / size_of::<HMODULE>();
+    if module_count == 0 {
+        return Ok(None);
+    }
+
+    let mut modules = vec![HMODULE(null_mut()); module_count];
+    let second_enum = unsafe {
+        EnumProcessModules(
+            process,
+            modules.as_mut_ptr(),
+            needed,
+            &mut needed,
+        )
+    };
+    if second_enum.is_err() {
+        return Ok(None);
+    }
+
+    for &module in &modules {
+        if module.0.is_null() {
+            continue;
+        }
+        let mut buffer = vec![0u16; 1024];
+        let len = unsafe {
+            GetModuleFileNameExW(process, module, &mut buffer)
+        };
+        if len > 0 {
+            let path = String::from_utf16_lossy(&buffer[..len as usize]);
+            if path.to_ascii_lowercase() == target_lower {
+                return Ok(Some(module));
+            }
+        }
+    }
+
+    println!("Failed to find existing DLL");
+    Ok(None)
+}
+
+fn free_library_remote(process: HANDLE, module: HMODULE) -> Result<(), String> {
+    if process.is_invalid() {
+        return Err("Invalid process handle.".to_string());
+    }
+
+    if module.0.is_null() {
+        return Err("Invalid module handle.".to_string());
+    }
+
+    let kernel32 = unsafe { GetModuleHandleW(windows::core::w!("kernel32.dll")) }
+        .map_err(|error| format!("GetModuleHandleW(kernel32.dll) failed: {error}"))?;
+
+    let free_library = unsafe { GetProcAddress(kernel32, s!("FreeLibrary")) }
+        .ok_or_else(|| "GetProcAddress(FreeLibrary) failed.".to_string())?;
+
+    // FreeLibrary signature:
+    // BOOL WINAPI FreeLibrary(HMODULE hLibModule);
+    //
+    // LPTHREAD_START_ROUTINE signature:
+    // DWORD WINAPI ThreadProc(LPVOID lpParameter);
+    //
+    // Both return 32-bit values on Windows, so this is commonly used.
+    let start_routine: LPTHREAD_START_ROUTINE = unsafe { transmute(free_library) };
+
+    let thread = unsafe {
+        CreateRemoteThread(
+            process,
+            None,
+            0,
+            start_routine,
+            Some(module.0 as *mut c_void),
+            0,
+            None,
+        )
+    }
+    .map_err(|error| format!("CreateRemoteThread(FreeLibrary) failed: {error}"))?;
+
+    let wait_result = unsafe { WaitForSingleObject(thread, LOAD_LIBRARY_WAIT_TIMEOUT_MS) };
+
+    if wait_result == WAIT_TIMEOUT {
+        unsafe {
+            let _ = CloseHandle(thread);
+        }
+
+        return Err(format!(
+            "FreeLibrary did not finish within {} seconds.",
+            LOAD_LIBRARY_WAIT_TIMEOUT_MS / 1_000
+        ));
+    }
+
+    if wait_result == WAIT_FAILED {
+        unsafe {
+            let _ = CloseHandle(thread);
+        }
+
+        return Err("WaitForSingleObject failed while waiting for FreeLibrary.".to_string());
+    }
+
+    if wait_result != WAIT_OBJECT_0 {
+        unsafe {
+            let _ = CloseHandle(thread);
+        }
+
+        return Err(format!(
+            "Unexpected WaitForSingleObject result while waiting for FreeLibrary: {}.",
+            wait_result.0
+        ));
+    }
+
+    let mut exit_code: u32 = 0;
+
+    unsafe {
+        GetExitCodeThread(thread, &mut exit_code)
+            .map_err(|error| {
+                let _ = CloseHandle(thread);
+                format!("GetExitCodeThread failed: {error}")
+            })?;
+
+        let _ = CloseHandle(thread);
+    }
+
+    // FreeLibrary returns nonzero on success, zero on failure.
+    if exit_code == 0 {
+        return Err("Remote FreeLibrary returned FALSE.".to_string());
+    }
+
+    Ok(())
+}
+
+fn inject_one(pid: u32, dll_path: &str, override_already_loaded: bool) -> Result<InjectOutcome, String> {
     let process = unsafe {
         OpenProcess(
             PROCESS_CREATE_THREAD
@@ -455,6 +614,44 @@ fn inject_one(pid: u32, dll_path: &str) -> Result<(), String> {
         )
     }
     .map_err(|error| format!("OpenProcess failed: {error}"))?;
+
+if let Ok(Some(module)) = find_module_handle(process, dll_path) {
+    if override_already_loaded {
+        if let Err(error) = free_library_remote(process, module) {
+            unsafe { let _ = CloseHandle(process); }
+            return Err(error);
+        }
+
+        // After free_library_remote succeeds, check if it's still there
+        // and keep freeing until it's gone
+        let start = std::time::Instant::now();
+        loop {
+            if start.elapsed().as_millis() > 5000 {
+                unsafe { let _ = CloseHandle(process); }
+                return Err("DLL did not unload within 5 seconds.".to_string());
+            }
+            match find_module_handle(process, dll_path) {
+                Ok(None) => break, // finally gone
+                Ok(Some(still_loaded)) => {
+                    // Still present — refcount was > 1, free again
+                    if let Err(e) = free_library_remote(process, still_loaded) {
+                        unsafe { let _ = CloseHandle(process); }
+                        return Err(format!("FreeLibrary loop failed: {e}"));
+                    }
+                }
+                Err(e) => {
+                    unsafe { let _ = CloseHandle(process); }
+                    return Err(format!("find_module_handle failed: {e}"));
+                }
+            }
+        }
+    } else {
+       unsafe {
+            let _ = CloseHandle(process);
+        }
+        return Ok(InjectOutcome::AlreadyLoaded);
+    }
+}
 
     let wide_path = to_wide_null(dll_path);
     let byte_len = wide_path.len() * size_of::<u16>();
@@ -545,7 +742,7 @@ fn inject_one(pid: u32, dll_path: &str) -> Result<(), String> {
         return Err("LoadLibraryW returned NULL inside the target process.".to_string());
     }
 
-    Ok(())
+    Ok(InjectOutcome::Injected)
 }
 
 fn close_unfinished_remote_thread(process: HANDLE, thread: HANDLE) {

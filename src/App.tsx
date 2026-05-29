@@ -67,6 +67,7 @@ type AppSettings = {
   confettiEnabled: boolean;
   shakeEnabled: boolean;
   focusOnInject: boolean;
+  overrideAlreadyLoaded?: boolean;
   activeProfileId: string;
   profiles: Profile[];
   selectedTarget?: SelectedTarget | null;
@@ -76,6 +77,7 @@ type AppSettings = {
 type InjectionResult = {
   dllPath: string;
   success: boolean;
+  alreadyLoaded: boolean;
   message: string;
 };
 
@@ -101,6 +103,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   confettiEnabled: true,
   shakeEnabled: true,
   focusOnInject: false,
+  overrideAlreadyLoaded: undefined,
   activeProfileId: "main",
   profiles: [
     {
@@ -304,7 +307,8 @@ export default function App() {
   const [progressExiting, setProgressExiting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [modal, setModal] = useState<"success" | "failure" | null>(null);
+  const [modal, setModal] = useState<"success" | "failure" | "warning" | null>(null);
+  const [rememberOverrideChoice, setRememberOverrideChoice] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [buttonShake, setButtonShake] = useState(false);
 
@@ -614,7 +618,7 @@ export default function App() {
     setContextMenu({ x: event.clientX, y: event.clientY, dllPath });
   }
 
-  async function inject() {
+  async function inject(overrideAlreadyLoaded = settings.overrideAlreadyLoaded ?? false) {
     const target = activeProfile.selectedTarget;
     if (!target) {
       setLogs((current) => [createLog("error", "Select a process before injecting."), ...current]);
@@ -640,16 +644,18 @@ export default function App() {
       const results = await invoke<InjectionResult[]>("inject_dlls", {
         target,
         dlls: enabledDlls,
-        focusOnInject: settings.focusOnInject
+        focusOnInject: settings.focusOnInject,
+        overrideAlreadyLoaded
       });
       window.clearInterval(progressTimer);
       setProgress(100);
 
       const failures = results.filter((result) => !result.success);
-      const successes = results.filter((result) => result.success);
+      const alreadyLoaded = results.filter((result) => result.alreadyLoaded);
+      const successes = results.filter((result) => result.success && !result.alreadyLoaded);
       const entries = results.map((result) =>
         createLog(
-          result.success ? "success" : "error",
+          result.success ? (result.alreadyLoaded ? "info" : "success") : "error",
           `${pathBaseName(result.dllPath)}: ${result.message}`
         )
       );
@@ -658,6 +664,8 @@ export default function App() {
 
       if (failures.length > 0) {
         setModal("failure");
+      } else if (alreadyLoaded.length > 0 && !overrideAlreadyLoaded && settings.overrideAlreadyLoaded == null) {
+        setModal("warning");
       } else if (successes.length > 0) {
         if (settings.shakeEnabled) {
           setButtonShake(true);
@@ -696,6 +704,21 @@ export default function App() {
     }
   }
 
+  function onOverrideYes() {
+    if (rememberOverrideChoice) {
+      updateSettings({ overrideAlreadyLoaded: true });
+    }
+    setModal(null);
+    inject(true);
+  }
+
+  function onOverrideNo() {
+    if (rememberOverrideChoice) {
+      updateSettings({ overrideAlreadyLoaded: false });
+    }
+    setModal(null);
+  }
+
   function dontShowSuccessAgain() {
     updateSettings({
       successPopupEnabled: false
@@ -711,6 +734,15 @@ export default function App() {
   }
 
   const selectedAvailable = Boolean(selectedProcess);
+
+  const injectDisabledReason = useMemo(() => {
+    if (isInjecting) return "Injection in progress…";
+    if (!activeProfile.selectedTarget) return "Select a process to inject into";
+    if (!selectedAvailable) return "Selected process is not running";
+    if (!activeProfile.dlls.length) return "Add at least one DLL";
+    if (!enabledDlls.length) return "Enable at least one DLL";
+    return null;
+  }, [isInjecting, activeProfile.selectedTarget, selectedAvailable, activeProfile.dlls.length, enabledDlls.length]);
 
   return (
     <main className="app-shell">
@@ -969,6 +1001,28 @@ export default function App() {
                 <span>Success popup</span>
                 <strong>{settings.successPopupEnabled ? "On" : "Off"}</strong>
               </button>
+              <button
+                className={`state-toggle ${settings.overrideAlreadyLoaded === true ? "on" : settings.overrideAlreadyLoaded === false ? "off" : ""}`}
+                onClick={() =>
+                  updateSettings({
+                    overrideAlreadyLoaded:
+                      settings.overrideAlreadyLoaded === undefined
+                        ? true
+                        : settings.overrideAlreadyLoaded === true
+                          ? false
+                          : undefined
+                  })
+                }
+              >
+                <span>Override already loaded</span>
+                <strong>
+                  {settings.overrideAlreadyLoaded === true
+                    ? "Yes"
+                    : settings.overrideAlreadyLoaded === false
+                      ? "No"
+                      : "Ask"}
+                </strong>
+              </button>
               <div className="setting-row">
                 <label>Success popup close</label>
                 <div className="range-row">
@@ -1028,14 +1082,19 @@ export default function App() {
             </div>
           </div>
 
-          <button
-            className={`inject-button ${buttonShake ? "shake" : ""}`}
-            disabled={isInjecting}
-            onClick={inject}
+          <div
+            className="inject-button-wrap"
+            data-tooltip={injectDisabledReason ?? undefined}
           >
-            {isInjecting ? <Loader2 className="spin" size={24} /> : <Play size={24} />}
-            Inject
-          </button>
+            <button
+              className={`inject-button ${buttonShake ? "shake" : ""}`}
+              disabled={Boolean(injectDisabledReason)}
+              onClick={() => inject()}
+            >
+              {isInjecting ? <Loader2 className="spin" size={24} /> : <Play size={24} />}
+              Inject
+            </button>
+          </div>
 
           {progressVisible && (
             <div className={`progress-pop ${progressExiting ? "exit" : ""}`}>
@@ -1103,18 +1162,54 @@ export default function App() {
       {modal && (
         <div className="modal-backdrop">
           <div className={`result-modal ${modal}`}>
-            <button className="modal-close" aria-label="Close popup" onClick={() => setModal(null)}>
-              <X size={17} />
-            </button>
+            {modal !== "warning" && (
+              <button className="modal-close" aria-label="Close popup" onClick={() => setModal(null)}>
+                <X size={17} />
+              </button>
+            )}
             <div className="modal-icon">
-              {modal === "success" ? <Check size={26} /> : <AlertTriangle size={26} />}
+              {modal === "success" ? (
+                <Check size={26} />
+              ) : modal === "warning" ? (
+                <AlertTriangle size={26} />
+              ) : (
+                <AlertTriangle size={26} />
+              )}
             </div>
-            <h2>{modal === "success" ? "DLL Injected" : "DLL Injection Failed"}</h2>
+            <h2>
+              {modal === "success"
+                ? "DLL Injected"
+                : modal === "warning"
+                  ? "Already Loaded"
+                  : "DLL Injection Failed"}
+            </h2>
             <p>
               {modal === "success"
                 ? "Enabled DLLs were loaded into the selected process."
-                : "One or more DLLs failed. Check the log for details."}
+                : modal === "warning"
+                  ? "One or more DLLs are already loaded in the target process. Override and reload them?"
+                  : "One or more DLLs failed. Check the log for details."}
             </p>
+            {modal === "warning" && (
+              <>
+                <label className="modal-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={rememberOverrideChoice}
+                    onChange={(e) => setRememberOverrideChoice(e.target.checked)}
+                  />
+                  <span>Remember my choice</span>
+                </label>
+                <div className="modal-actions">
+                  <button className="secondary-button" onClick={onOverrideNo}>
+                    No
+                  </button>
+                  <button className="primary-button" onClick={onOverrideYes}>
+                    Yes
+                  </button>
+                </div>
+              </>
+            )}
             {modal === "success" && (
               <button className="ghost-button" onClick={dontShowSuccessAgain}>
                 <Bell size={16} />
