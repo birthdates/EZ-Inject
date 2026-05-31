@@ -103,6 +103,10 @@ button {
   gap: 6px;
 }
 
+.window-actions .theme-toggle {
+  margin-right: 4px;
+}
+
 .window-actions button,
 .icon-button {
   width: 34px;
@@ -129,6 +133,11 @@ button {
 .window-actions .close:hover {
   color: #fff;
   background: #c4455c;
+}
+
+.window-actions .theme-toggle.active {
+  color: #fff;
+  background: #725ac1;
 }
 
 .content-grid {
@@ -1124,6 +1133,186 @@ button {
 
 .result-modal .ghost-button {
   margin-top: 18px;
+}
+
+.app-shell.dark {
+  color-scheme: dark;
+  color: #f5f1ff;
+  background:
+    linear-gradient(135deg, rgba(17, 16, 24, 0.99), rgba(31, 26, 43, 0.98)),
+    radial-gradient(circle at 18% 14%, rgba(88, 176, 156, 0.18), transparent 32%),
+    radial-gradient(circle at 84% 18%, rgba(114, 90, 193, 0.26), transparent 28%);
+}
+
+.app-shell.dark .titlebar {
+  border-bottom-color: rgba(222, 214, 245, 0.12);
+}
+
+.app-shell.dark .brand-block span,
+.app-shell.dark .process-title-line span,
+.app-shell.dark .process-main p,
+.app-shell.dark .dll-row p,
+.app-shell.dark .selected-target p,
+.app-shell.dark .result-modal p,
+.app-shell.dark .profile-input span,
+.app-shell.dark .setting-row label,
+.app-shell.dark .state-toggle span,
+.app-shell.dark .log-row span,
+.app-shell.dark .modal-checkbox {
+  color: rgba(245, 241, 255, 0.64);
+}
+
+.app-shell.dark .process-panel,
+.app-shell.dark .selected-target,
+.app-shell.dark .profile-panel,
+.app-shell.dark .quick-settings,
+.app-shell.dark .dll-section,
+.app-shell.dark .log-panel,
+.app-shell.dark .progress-pop {
+  background: rgba(30, 27, 41, 0.78);
+  border-color: rgba(222, 214, 245, 0.12);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
+}
+
+.app-shell.dark .window-actions button,
+.app-shell.dark .icon-button,
+.app-shell.dark .settings-button,
+.app-shell.dark .secondary-button,
+.app-shell.dark .ghost-button,
+.app-shell.dark .search-box,
+.app-shell.dark .select-control,
+.app-shell.dark .dropdown-trigger,
+.app-shell.dark .profile-tabs button,
+.app-shell.dark .profile-input input,
+.app-shell.dark .setting-row,
+.app-shell.dark .state-toggle,
+.app-shell.dark .process-row,
+.app-shell.dark .dll-row,
+.app-shell.dark .log-row {
+  color: #f5f1ff;
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(222, 214, 245, 0.12);
+}
+
+.app-shell.dark .window-actions button:hover,
+.app-shell.dark .icon-button:hover,
+.app-shell.dark .settings-button:hover,
+.app-shell.dark .secondary-button:hover,
+.app-shell.dark .ghost-button:hover,
+.app-shell.dark .dropdown-trigger:hover,
+.app-shell.dark .pretty-dropdown.open .dropdown-trigger,
+.app-shell.dark .profile-tabs button:hover,
+.app-shell.dark .process-row:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(141, 134, 201, 0.46);
+}
+
+.app-shell.dark .window-actions .theme-toggle.active,
+.app-shell.dark .target-mode button.active,
+.app-shell.dark .profile-tabs button.active,
+.app-shell.dark .dropdown-menu button.selected,
+.app-shell.dark .small-pill {
+  color: #fff;
+  background: linear-gradient(135deg, #7b63cf, #58b09c);
+}
+
+.app-shell.dark .search-box input,
+.app-shell.dark .select-control select,
+.app-shell.dark .profile-input input {
+  color: #f5f1ff;
+}
+
+.app-shell.dark .search-box input::placeholder,
+.app-shell.dark .profile-input input::placeholder {
+  color: rgba(245, 241, 255, 0.42);
+}
+
+.app-shell.dark .dropdown-menu,
+.app-shell.dark .context-menu,
+.app-shell.dark .result-modal {
+  color: #f5f1ff;
+  background: rgba(27, 24, 38, 0.98);
+  border-color: rgba(222, 214, 245, 0.14);
+  box-shadow: 0 22px 54px rgba(0, 0, 0, 0.42);
+}
+
+.app-shell.dark .dropdown-menu button,
+.app-shell.dark .context-menu button,
+.app-shell.dark .modal-close {
+  color: #f5f1ff;
+}
+
+.app-shell.dark .dropdown-menu button:hover,
+.app-shell.dark .context-menu button:hover,
+.app-shell.dark .modal-close {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.app-shell.dark .target-mode {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.app-shell.dark .target-mode button {
+  color: rgba(245, 241, 255, 0.68);
+}
+
+.app-shell.dark .process-row.selected {
+  background: rgba(123, 99, 207, 0.18);
+  border-color: rgba(123, 99, 207, 0.72);
+  box-shadow: inset 4px 0 0 #7b63cf;
+}
+
+.app-shell.dark .process-meta span,
+.app-shell.dark .dll-icon {
+  color: #c9c0ff;
+  background: rgba(123, 99, 207, 0.16);
+}
+
+.app-shell.dark .empty-state {
+  color: rgba(245, 241, 255, 0.48);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(222, 214, 245, 0.18);
+}
+
+.app-shell.dark .empty-log,
+.app-shell.dark .log-row p,
+.app-shell.dark .progress-copy {
+  color: rgba(245, 241, 255, 0.82);
+}
+
+.app-shell.dark .state-toggle.on {
+  color: #b9f2e5;
+  background: linear-gradient(135deg, rgba(88, 176, 156, 0.24), rgba(255, 255, 255, 0.07));
+  border-color: rgba(88, 176, 156, 0.34);
+}
+
+.app-shell.dark .state-toggle.on strong,
+.app-shell.dark .target-live,
+.app-shell.dark .progress-copy strong {
+  color: #8ee4d0 !important;
+}
+
+.app-shell.dark .state-toggle.off {
+  color: #f3b3bf;
+  background: linear-gradient(135deg, rgba(196, 69, 92, 0.22), rgba(255, 255, 255, 0.06));
+  border-color: rgba(196, 69, 92, 0.32);
+}
+
+.app-shell.dark .state-toggle.off strong,
+.app-shell.dark .target-missing {
+  color: #f18da1 !important;
+}
+
+.app-shell.dark .modal-backdrop {
+  background: rgba(8, 7, 12, 0.58);
+}
+
+.app-shell.dark ::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.app-shell.dark ::-webkit-scrollbar-thumb {
+  background: rgba(141, 134, 201, 0.54);
 }
 
 .spin {

@@ -13,11 +13,13 @@ import {
   Loader2,
   Maximize2,
   Minus,
+  Moon,
   Play,
   Plus,
   Search,
   Settings2,
   SortAsc,
+  Sun,
   Target,
   Trash2,
   X
@@ -67,6 +69,7 @@ type AppSettings = {
   confettiEnabled: boolean;
   shakeEnabled: boolean;
   focusOnInject: boolean;
+  darkMode: boolean;
   overrideAlreadyLoaded?: boolean;
   activeProfileId: string;
   profiles: Profile[];
@@ -103,6 +106,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   confettiEnabled: true,
   shakeEnabled: true,
   focusOnInject: false,
+  darkMode: false,
   overrideAlreadyLoaded: undefined,
   activeProfileId: "main",
   profiles: [
@@ -745,7 +749,7 @@ export default function App() {
   }, [isInjecting, activeProfile.selectedTarget, selectedAvailable, activeProfile.dlls.length, enabledDlls.length]);
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${settings.darkMode ? "dark" : "light"}`}>
       <header className="titlebar" onMouseDown={startDrag}>
         <div className="brand-block">
           <div className="brand-mark">
@@ -757,6 +761,14 @@ export default function App() {
           </div>
         </div>
         <div className="window-actions no-drag">
+          <button
+            className={`theme-toggle ${settings.darkMode ? "active" : ""}`}
+            aria-label={settings.darkMode ? "Switch to light mode" : "Switch to dark mode"}
+            title={settings.darkMode ? "Switch to light mode" : "Switch to dark mode"}
+            onClick={() => updateSettings({ darkMode: !settings.darkMode })}
+          >
+            {settings.darkMode ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
           <button aria-label="Minimize" onClick={() => invoke("window_minimize")}>
             <Minus size={16} />
           </button>
@@ -1000,6 +1012,13 @@ export default function App() {
               >
                 <span>Success popup</span>
                 <strong>{settings.successPopupEnabled ? "On" : "Off"}</strong>
+              </button>
+              <button
+                className={`state-toggle ${settings.darkMode ? "on" : "off"}`}
+                onClick={() => updateSettings({ darkMode: !settings.darkMode })}
+              >
+                <span>Dark mode</span>
+                <strong>{settings.darkMode ? "On" : "Off"}</strong>
               </button>
               <button
                 className={`state-toggle ${settings.overrideAlreadyLoaded === true ? "on" : settings.overrideAlreadyLoaded === false ? "off" : ""}`}

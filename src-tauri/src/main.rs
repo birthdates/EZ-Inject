@@ -114,6 +114,7 @@ struct AppSettings {
     confetti_enabled: bool,
     shake_enabled: bool,
     focus_on_inject: bool,
+    dark_mode: bool,
     active_profile_id: String,
     profiles: Vec<Profile>,
     #[serde(skip_serializing)]
@@ -135,6 +136,7 @@ impl Default for AppSettings {
             confetti_enabled: true,
             shake_enabled: true,
             focus_on_inject: false,
+            dark_mode: false,
             active_profile_id: "main".to_string(),
             profiles: vec![Profile::default()],
             dont_show_success_again: false,
