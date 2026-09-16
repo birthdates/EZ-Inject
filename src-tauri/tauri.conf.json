@@ -15,9 +15,9 @@
         "title": "EZInject",
         "width": 1320,
         "height": 840,
-        "minWidth": 1320,
-        "minHeight": 840,
-        "resizable": false,
+        "minWidth": 860,
+        "minHeight": 540,
+        "resizable": true,
         "decorations": false,
         "transparent": false,
         "center": true

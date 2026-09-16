@@ -20,7 +20,7 @@ EZInject is intended for processes you own or are authorized to test. It does no
 - Saves the active profile, selected target, target mode, DLL paths, and DLL enabled state.
 - Configurable process refresh interval, success popup, confetti, and inject button animation.
 - Runtime log for injection results and failures.
-- Custom frameless, non-resizable window.
+- Custom frameless, resizable window with edge dragging and maximize/restore controls.
 - Windows admin manifest enabled by default.
 
 ## Tech Stack

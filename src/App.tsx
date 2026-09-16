@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import confetti from "canvas-confetti";
 import {
   Activity,
@@ -12,6 +13,7 @@ import {
   ListRestart,
   Loader2,
   Maximize2,
+  Minimize2,
   Minus,
   Moon,
   Play,
@@ -315,6 +317,7 @@ export default function App() {
   const [rememberOverrideChoice, setRememberOverrideChoice] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [buttonShake, setButtonShake] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
 
   const activeProfile = useMemo(
     () =>
@@ -730,6 +733,69 @@ export default function App() {
     setModal(null);
   }
 
+  useEffect(() => {
+    let unlistenResize: (() => void) | undefined;
+
+    const checkMaximized = async () => {
+      try {
+        const max = await invoke<boolean>("is_window_maximized");
+        setIsMaximized(max);
+      } catch {
+        // ignore
+      }
+    };
+
+    checkMaximized();
+    window.addEventListener("resize", checkMaximized);
+
+    try {
+      getCurrentWindow()
+        .onResized(() => {
+          checkMaximized();
+        })
+        .then((unlisten) => {
+          unlistenResize = unlisten;
+        })
+        .catch(() => undefined);
+    } catch {
+      // ignore
+    }
+
+    return () => {
+      window.removeEventListener("resize", checkMaximized);
+      if (unlistenResize) unlistenResize();
+    };
+  }, []);
+
+  async function toggleMaximize() {
+    try {
+      await invoke("window_toggle_maximize");
+      const max = await invoke<boolean>("is_window_maximized");
+      setIsMaximized(max);
+    } catch {
+      // ignore
+    }
+  }
+
+  function onTitlebarDoubleClick(event: MouseEvent) {
+    const target = event.target as HTMLElement;
+    if (target.closest("button, input, select, .no-drag")) return;
+    toggleMaximize();
+  }
+
+  const handleResize =
+    (direction: "East" | "North" | "NorthEast" | "NorthWest" | "South" | "SouthEast" | "SouthWest" | "West") =>
+    (event: MouseEvent) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      try {
+        getCurrentWindow().startResizeDragging(direction).catch(() => undefined);
+      } catch {
+        // ignore
+      }
+    };
+
   function startDrag(event: MouseEvent) {
     if (event.buttons !== 1) return;
     const target = event.target as HTMLElement;
@@ -749,8 +815,20 @@ export default function App() {
   }, [isInjecting, activeProfile.selectedTarget, selectedAvailable, activeProfile.dlls.length, enabledDlls.length]);
 
   return (
-    <main className={`app-shell ${settings.darkMode ? "dark" : "light"}`}>
-      <header className="titlebar" onMouseDown={startDrag}>
+    <main className={`app-shell ${settings.darkMode ? "dark" : "light"} ${isMaximized ? "maximized" : ""}`}>
+      {!isMaximized && (
+        <div className="window-resize-handles" aria-hidden="true">
+          <div className="resize-handle top" onMouseDown={handleResize("North")} />
+          <div className="resize-handle bottom" onMouseDown={handleResize("South")} />
+          <div className="resize-handle left" onMouseDown={handleResize("West")} />
+          <div className="resize-handle right" onMouseDown={handleResize("East")} />
+          <div className="resize-handle top-left" onMouseDown={handleResize("NorthWest")} />
+          <div className="resize-handle top-right" onMouseDown={handleResize("NorthEast")} />
+          <div className="resize-handle bottom-left" onMouseDown={handleResize("SouthWest")} />
+          <div className="resize-handle bottom-right" onMouseDown={handleResize("SouthEast")} />
+        </div>
+      )}
+      <header className="titlebar" onMouseDown={startDrag} onDoubleClick={onTitlebarDoubleClick}>
         <div className="brand-block">
           <div className="brand-mark">
             <img src="/icon.png" alt="" />
@@ -772,8 +850,12 @@ export default function App() {
           <button aria-label="Minimize" onClick={() => invoke("window_minimize")}>
             <Minus size={16} />
           </button>
-          <button aria-label="Up size" onClick={() => invoke("window_toggle_maximize")}>
-            <Maximize2 size={15} />
+          <button
+            aria-label={isMaximized ? "Restore" : "Maximize"}
+            title={isMaximized ? "Restore" : "Maximize"}
+            onClick={toggleMaximize}
+          >
+            {isMaximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
           </button>
           <button aria-label="Close" className="close" onClick={() => invoke("window_close")}>
             <X size={16} />

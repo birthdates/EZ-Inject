@@ -13,8 +13,10 @@
 
 body {
   margin: 0;
-  min-width: 1320px;
-  min-height: 840px;
+  width: 100vw;
+  height: 100vh;
+  min-width: 860px;
+  min-height: 540px;
   overflow: hidden;
   user-select: none;
 }
@@ -32,6 +34,7 @@ button {
 .app-shell {
   width: 100vw;
   height: 100vh;
+  position: relative;
   background:
     linear-gradient(135deg, rgba(247, 236, 225, 0.98), rgba(202, 196, 206, 0.94)),
     radial-gradient(circle at 18% 14%, rgba(141, 134, 201, 0.32), transparent 32%),
@@ -39,6 +42,15 @@ button {
   display: flex;
   flex-direction: column;
   color: #211b2f;
+  box-sizing: border-box;
+}
+
+.app-shell:not(.maximized) {
+  border: 1px solid rgba(88, 74, 115, 0.24);
+}
+
+.app-shell.dark:not(.maximized) {
+  border: 1px solid rgba(222, 214, 245, 0.16);
 }
 
 .titlebar {
@@ -144,9 +156,10 @@ button {
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-columns: 540px 1fr;
-  gap: 18px;
+  grid-template-columns: minmax(360px, 500px) 1fr;
+  gap: 16px;
   padding: 14px 18px 18px;
+  overflow: hidden;
 }
 
 .process-panel,
@@ -154,6 +167,12 @@ button {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.workspace-panel {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
 }
 
 .process-panel {
@@ -662,8 +681,8 @@ button {
 
 .quick-settings {
   display: grid;
-  grid-template-columns: 1.2fr 0.7fr 0.8fr 0.95fr 1.15fr;
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
   padding: 12px;
   animation: slide-down 180ms ease;
 }
@@ -1396,5 +1415,106 @@ button {
   40%,
   60% {
     transform: translateX(5px);
+  }
+}
+
+/* Window resize handles */
+.window-resize-handles {
+  pointer-events: none;
+}
+
+.resize-handle {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: auto;
+}
+
+.resize-handle.top {
+  top: 0;
+  left: 10px;
+  right: 10px;
+  height: 6px;
+  cursor: n-resize;
+}
+
+.resize-handle.bottom {
+  bottom: 0;
+  left: 10px;
+  right: 10px;
+  height: 6px;
+  cursor: s-resize;
+}
+
+.resize-handle.left {
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 6px;
+  cursor: w-resize;
+}
+
+.resize-handle.right {
+  top: 10px;
+  bottom: 10px;
+  right: 0;
+  width: 6px;
+  cursor: e-resize;
+}
+
+.resize-handle.top-left {
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
+  z-index: 10000;
+}
+
+.resize-handle.top-right {
+  top: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nesw-resize;
+  z-index: 10000;
+}
+
+.resize-handle.bottom-left {
+  bottom: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nesw-resize;
+  z-index: 10000;
+}
+
+.resize-handle.bottom-right {
+  bottom: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nwse-resize;
+  z-index: 10000;
+}
+
+@media (max-width: 1100px) {
+  .process-controls {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .process-controls .search-box {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 960px) {
+  .content-grid {
+    grid-template-columns: minmax(320px, 440px) 1fr;
+    gap: 12px;
+    padding: 10px 12px 12px;
+  }
+
+  .profile-manager {
+    grid-template-columns: 1fr 1fr;
   }
 }

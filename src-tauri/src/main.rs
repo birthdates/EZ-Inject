@@ -293,6 +293,11 @@ fn window_toggle_maximize(window: Window) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn is_window_maximized(window: Window) -> Result<bool, String> {
+    window.is_maximized().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn window_close(window: Window) -> Result<(), String> {
     window.close().map_err(|error| error.to_string())
 }
@@ -1075,6 +1080,7 @@ fn main() {
             inject_dlls,
             window_minimize,
             window_toggle_maximize,
+            is_window_maximized,
             window_close,
             start_window_drag
         ])

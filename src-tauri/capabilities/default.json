@@ -3,5 +3,8 @@
   "identifier": "default",
   "description": "Default EZInject desktop capability",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-resize-dragging"
+  ]
 }
